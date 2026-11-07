@@ -207,12 +207,20 @@
 
 # main.py
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+from urllib.parse import urlparse
+import ipaddress
 from fastapi.middleware.cors import CORSMiddleware
 import re
 import torch
 import numpy as np
 import pandas as pd
+from threading import Lock
+from functools import wraps
 
 # ✅ NEW MODEL IMPORT
 from transformers import RobertaTokenizer, RobertaForSequenceClassification
@@ -226,6 +234,69 @@ from cleaner import run as clean_data
 # APP INIT
 # =========================
 app = FastAPI()
+
+import requests
+
+def verify_turnstile(token: str, remote_ip: str = None):
+    secret = os.getenv("TURNSTILE_SECRET_KEY")
+
+    if not secret or not token:
+        return False
+
+    try:
+        response = requests.post(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            data={
+                "secret": secret,
+                "response": token,
+                "remoteip": remote_ip,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result.get("success") is True
+
+    except Exception:
+        return False
+    
+analysis_lock = Lock()
+
+
+def limit_concurrent_analysis(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not analysis_lock.acquire(blocking=False):
+            raise HTTPException(
+                status_code=429,
+                detail="Another analysis is running. Please try again shortly."
+            )
+
+        try:
+            return func(*args, **kwargs)
+        finally:
+            analysis_lock.release()
+
+    return wrapper
+
+def validate_flipkart_url(url: str):
+    parsed = urlparse(url)
+
+    if parsed.scheme != "https":
+        raise HTTPException(status_code=400, detail="Only HTTPS Flipkart URLs are allowed")
+
+    hostname = (parsed.hostname or "").lower()
+
+    if hostname not in {"flipkart.com", "www.flipkart.com"}:
+        raise HTTPException(status_code=400, detail="Only Flipkart product URLs are allowed")
+
+    if not parsed.path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid product URL")
+
+    if not re.search(r"/p/", parsed.path):
+        raise HTTPException(status_code=400, detail="Please provide a Flipkart product URL")
+
+    return url
 
 app.add_middleware(
     CORSMiddleware,
@@ -294,12 +365,23 @@ def get_model_accuracy():
 
 
 @app.post("/analyze")
-def analyze(data: dict):
+@limit_concurrent_analysis
+def analyze(data: dict, request: Request):
+    token = data.get("turnstileToken")
+    remote_ip = request.client.host if request.client else None
+
+    if not verify_turnstile(token, remote_ip):
+        raise HTTPException(
+            status_code=403,
+            detail="Security verification failed. Please try again."
+        )
 
     url = data.get("url")
 
     if not url:
-        return {"error": "URL is required"}
+        raise HTTPException(status_code=400, detail="URL is required")
+
+    validate_flipkart_url(url)
 
     print("\n🚀 Starting Full Pipeline...")
 

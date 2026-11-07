@@ -182,6 +182,7 @@ import Navbar from "../components/Navbar";
 import Card from "../components/Card";
 import Button from "../components/Button";
 import axios from "axios";
+import { Turnstile } from "@marsidev/react-turnstile";
 
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -189,6 +190,7 @@ export default function Predict() {
   const [url, setUrl] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   const navigate = useNavigate();
 
@@ -199,7 +201,10 @@ export default function Predict() {
   }, []);
 
   const analyze = async () => {
-    if (!url) return;
+    if (!url || !turnstileToken) {
+      alert("Please complete the security verification first.");
+      return;
+    }
 
     setLoading(true);
 
@@ -211,7 +216,7 @@ export default function Predict() {
       // const res = await axios.post("http://localhost:8000/analyze", { url });
       const res = await axios.post(
         `${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analyze`,
-        { url },
+        { url, turnstileToken },
       );
 
       setResult(res.data);
@@ -249,6 +254,12 @@ export default function Predict() {
                   placeholder="Paste Flipkart product URL..."
                   onChange={(e) => setUrl(e.target.value)}
                 />
+                <Turnstile
+                  siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken("")}
+                  onError={() => setTurnstileToken("")}
+                />
 
                 {loading && (
                   <p className="text-blue-600 text-sm animate-pulse">
@@ -256,7 +267,7 @@ export default function Predict() {
                   </p>
                 )}
 
-                <Button onClick={analyze} disabled={loading}>
+                <Button onClick={analyze} disabled={loading || !turnstileToken}>
                   {loading ? "Analyzing..." : "Analyze"}
                 </Button>
               </Card>

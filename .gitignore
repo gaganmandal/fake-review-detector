@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+venv/
+.venv/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend build files
+dist/
+build/
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+
+# Unused frontend
+/frontend/
+
+# Large AI model weights
+/backend/fake_review_model/model.safetensors
+
+# Jupyter temporary files
+.ipynb_checkpoints/
+
+# Jupyter temporary files
+.ipynb_checkpoints/
